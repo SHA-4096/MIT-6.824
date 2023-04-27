@@ -33,23 +33,22 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 
 func (c *(Coordinator)) GetTask(args *RequestArgs, reply *ReplyArgs) error {
 	fmt.Println("Being called,args = ", *args)
+	fmt.Println("TaskCount=", TaskCount)
 	if args.ReqType == 2 {
 		TaskCount--
-		if TaskCount == 0 {
-			c.Done()
-			return nil
-		}
 	} else if args.ReqType == 1 {
 		//finished map task
-		tsk := ReplyArgs{2, fmt.Sprintf("mr-%d", ihash(args.FileName))} // A reduce tsak
+		tsk := ReplyArgs{2, args.FileName} // A reduce task
 		taskAssign <- tsk
 	} else {
-
+		if TaskCount == 0 {
+			return nil
+		}
+		//assigning a task
+		tmpReply := <-taskAssign
+		(*reply).FileName = tmpReply.FileName
+		(*reply).WorkType = tmpReply.WorkType
 	}
-	tmpReply := <-taskAssign
-	fmt.Println("AAA")
-	(*reply).FileName = tmpReply.FileName
-	(*reply).WorkType = tmpReply.WorkType
 	return nil
 }
 
@@ -73,8 +72,10 @@ func (c *Coordinator) server() {
 //
 func (c *Coordinator) Done() bool {
 	ret := false
-
-	// Your code here.
+	if TaskCount == 0 {
+		c.Done()
+		ret = true
+	}
 
 	return ret
 }
@@ -86,7 +87,7 @@ func (c *Coordinator) Done() bool {
 //
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
-	taskAssign = make(chan ReplyArgs, 100)
+	taskAssign = make(chan ReplyArgs, 1000)
 	// Your code here.
 	TaskCount = 0
 	c.server()

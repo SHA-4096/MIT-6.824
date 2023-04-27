@@ -9,6 +9,7 @@ import (
 	"net/rpc"
 	"os"
 	"sort"
+	"time"
 )
 
 // for sorting by key.
@@ -44,10 +45,13 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	// Your worker implementation here.
-
 	// uncomment to send the Example RPC to the coordinator.
 	for {
+		time.Sleep(5 * time.Second)
 		reply, _ := requestTask(3, "")
+		if reply.WorkType == 0 {
+			continue
+		}
 		fmt.Println(reply)
 		//获得reply之后判断任务要求
 		if reply.WorkType == 1 {
@@ -64,7 +68,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			kva := mapf(reply.FileName, string(content))
 			//fmt.Println(kva)
 			sort.Sort(ByKey(kva))
-			oname := fmt.Sprintf("mr-out-%d.json", ihash(reply.FileName))
+			oname := fmt.Sprintf("mr-out-%d", ihash(reply.FileName))
 			ofile, _ := os.Create(oname)
 			enc := json.NewEncoder(ofile)
 			for _, kv := range kva {
@@ -73,22 +77,32 @@ func Worker(mapf func(string, string) []KeyValue,
 					panic(err)
 				}
 			}
+			//发送完成的信息
+			requestTask(1, oname)
 
 		} else {
-			/*file, err := os.Open(reply.FileName)
+			//进行reduce操作
+			file, err := os.Open(reply.FileName)
 			if err != nil {
 				log.Fatalf("cannot open %v", reply.FileName)
 			}
-			content, err := ioutil.ReadAll(file)
 			if err != nil {
 				log.Fatalf("cannot read %v", reply.FileName)
 			}
-			file.Close()
-			kva := reduce(reply.FileName, string(content))
-			//fmt.Println(kva)
-			sort.Sort(ByKey(kva))
-			oname := fmt.Sprintf("mr-out-%d", ihash(reply.FileName))
+			kva := []KeyValue{}
+			defer file.Close()
+			dec := json.NewDecoder(file)
+			for {
+				var kv KeyValue
+				if err := dec.Decode(&kv); err != nil {
+					break
+				}
+				kva = append(kva, kv)
+			}
+			//写文件
+			oname := fmt.Sprintf("%s-%d", reply.FileName, ihash(reply.FileName))
 			ofile, _ := os.Create(oname)
+			defer ofile.Close()
 			i := 0
 			for i < len(kva) {
 				j := i + 1
@@ -102,8 +116,13 @@ func Worker(mapf func(string, string) []KeyValue,
 				output := reducef(kva[i].Key, values)
 
 				// this is the correct format for each line of Reduce output.
+				//fmt.Printf("%v %v\n", kva[i].Key, output)
 				fmt.Fprintf(ofile, "%v %v\n", kva[i].Key, output)
-				i = j*/
+
+				i = j
+			}
+			//发送完成的信息
+			requestTask(2, oname)
 
 		}
 	}

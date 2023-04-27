@@ -1,10 +1,23 @@
 package mr
 
-import "fmt"
-import "log"
-import "net/rpc"
-import "hash/fnv"
+import (
+	"encoding/json"
+	"fmt"
+	"hash/fnv"
+	"io/ioutil"
+	"log"
+	"net/rpc"
+	"os"
+	"sort"
+)
 
+// for sorting by key.
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 //
 // Map functions return a slice of KeyValue.
@@ -24,7 +37,6 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
-
 //
 // main/mrworker.go calls this function.
 //
@@ -34,7 +46,67 @@ func Worker(mapf func(string, string) []KeyValue,
 	// Your worker implementation here.
 
 	// uncomment to send the Example RPC to the coordinator.
-	// CallExample()
+	for {
+		reply, _ := requestTask(3, "")
+		fmt.Println(reply)
+		//获得reply之后判断任务要求
+		if reply.WorkType == 1 {
+			//进行map操作
+			file, err := os.Open(reply.FileName)
+			if err != nil {
+				log.Fatalf("cannot open %v", reply.FileName)
+			}
+			content, err := ioutil.ReadAll(file)
+			if err != nil {
+				log.Fatalf("cannot read %v", reply.FileName)
+			}
+			file.Close()
+			kva := mapf(reply.FileName, string(content))
+			//fmt.Println(kva)
+			sort.Sort(ByKey(kva))
+			oname := fmt.Sprintf("mr-out-%d.json", ihash(reply.FileName))
+			ofile, _ := os.Create(oname)
+			enc := json.NewEncoder(ofile)
+			for _, kv := range kva {
+				err := enc.Encode(&kv)
+				if err != nil {
+					panic(err)
+				}
+			}
+
+		} else {
+			/*file, err := os.Open(reply.FileName)
+			if err != nil {
+				log.Fatalf("cannot open %v", reply.FileName)
+			}
+			content, err := ioutil.ReadAll(file)
+			if err != nil {
+				log.Fatalf("cannot read %v", reply.FileName)
+			}
+			file.Close()
+			kva := reduce(reply.FileName, string(content))
+			//fmt.Println(kva)
+			sort.Sort(ByKey(kva))
+			oname := fmt.Sprintf("mr-out-%d", ihash(reply.FileName))
+			ofile, _ := os.Create(oname)
+			i := 0
+			for i < len(kva) {
+				j := i + 1
+				for j < len(kva) && kva[j].Key == kva[i].Key {
+					j++
+				}
+				values := []string{}
+				for k := i; k < j; k++ {
+					values = append(values, kva[k].Value)
+				}
+				output := reducef(kva[i].Key, values)
+
+				// this is the correct format for each line of Reduce output.
+				fmt.Fprintf(ofile, "%v %v\n", kva[i].Key, output)
+				i = j*/
+
+		}
+	}
 
 }
 
@@ -43,28 +115,30 @@ func Worker(mapf func(string, string) []KeyValue,
 //
 // the RPC argument and reply types are defined in rpc.go.
 //
-func CallExample() {
+func requestTask(requestType int, fileName string) (ReplyArgs, error) {
 
 	// declare an argument structure.
-	args := ExampleArgs{}
+	args := RequestArgs{}
 
 	// fill in the argument(s).
-	args.X = 99
+	args.ReqType = requestType
+	args.FileName = fileName
 
 	// declare a reply structure.
-	reply := ExampleReply{}
+	reply := ReplyArgs{}
 
 	// send the RPC request, wait for the reply.
 	// the "Coordinator.Example" tells the
 	// receiving server that we'd like to call
 	// the Example() method of struct Coordinator.
-	ok := call("Coordinator.Example", &args, &reply)
+	ok := call("Coordinator.GetTask", &args, &reply)
 	if ok {
 		// reply.Y should be 100.
-		fmt.Printf("reply.Y %v\n", reply.Y)
+		//fmt.Println(reply)
 	} else {
 		fmt.Printf("call failed!\n")
 	}
+	return reply, nil
 }
 
 //
@@ -73,9 +147,7 @@ func CallExample() {
 // returns false if something goes wrong.
 //
 func call(rpcname string, args interface{}, reply interface{}) bool {
-	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
-	sockname := coordinatorSock()
-	c, err := rpc.DialHTTP("unix", sockname)
+	c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
 	if err != nil {
 		log.Fatal("dialing:", err)
 	}

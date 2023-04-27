@@ -1,11 +1,18 @@
 package mr
 
-import "log"
-import "net"
-import "os"
-import "net/rpc"
-import "net/http"
+import (
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"net/rpc"
+	"os"
+)
 
+var (
+	TaskCount  int
+	taskAssign chan ReplyArgs
+)
 
 type Coordinator struct {
 	// Your definitions here.
@@ -24,17 +31,36 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 	return nil
 }
 
+func (c *(Coordinator)) GetTask(args *RequestArgs, reply *ReplyArgs) error {
+	fmt.Println("Being called,args = ", *args)
+	if args.ReqType == 2 {
+		TaskCount--
+		if TaskCount == 0 {
+			c.Done()
+			return nil
+		}
+	} else if args.ReqType == 1 {
+		//finished map task
+		tsk := ReplyArgs{2, fmt.Sprintf("mr-%d", ihash(args.FileName))} // A reduce tsak
+		taskAssign <- tsk
+	} else {
+
+	}
+	tmpReply := <-taskAssign
+	fmt.Println("AAA")
+	(*reply).FileName = tmpReply.FileName
+	(*reply).WorkType = tmpReply.WorkType
+	return nil
+}
 
 //
 // start a thread that listens for RPCs from worker.go
 //
 func (c *Coordinator) server() {
+	//不是很了解socket，先用http顶一顶
 	rpc.Register(c)
 	rpc.HandleHTTP()
-	//l, e := net.Listen("tcp", ":1234")
-	sockname := coordinatorSock()
-	os.Remove(sockname)
-	l, e := net.Listen("unix", sockname)
+	l, e := net.Listen("tcp", ":1234")
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
@@ -50,7 +76,6 @@ func (c *Coordinator) Done() bool {
 
 	// Your code here.
 
-
 	return ret
 }
 
@@ -61,10 +86,23 @@ func (c *Coordinator) Done() bool {
 //
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
-
+	taskAssign = make(chan ReplyArgs, 100)
 	// Your code here.
-
-
+	TaskCount = 0
 	c.server()
+	for _, filename := range files {
+		TaskCount++
+		file, err := os.Open(filename)
+		if err != nil {
+			log.Fatalf("cannot open %v", filename)
+		}
+		//		content, err := ioutil.ReadAll(file)
+		if err != nil {
+			log.Fatalf("cannot read %v", filename)
+		}
+		file.Close()
+		tsk := ReplyArgs{1, filename}
+		taskAssign <- tsk
+	}
 	return &c
 }

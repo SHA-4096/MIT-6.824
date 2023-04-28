@@ -11,7 +11,7 @@ import (
 
 var (
 	TaskCount  int
-	taskAssign chan ReplyArgs
+	taskAssign []ReplyArgs
 )
 
 type Coordinator struct {
@@ -39,15 +39,18 @@ func (c *(Coordinator)) GetTask(args *RequestArgs, reply *ReplyArgs) error {
 	} else if args.ReqType == 1 {
 		//finished map task
 		tsk := ReplyArgs{2, args.FileName} // A reduce task
-		taskAssign <- tsk
+		taskAssign = append(taskAssign, tsk)
 	} else {
 		if TaskCount == 0 {
 			return nil
 		}
 		//assigning a task
-		tmpReply := <-taskAssign
-		(*reply).FileName = tmpReply.FileName
-		(*reply).WorkType = tmpReply.WorkType
+		if len(taskAssign) > 0 {
+			tmpReply := taskAssign[0]
+			(*reply).FileName = tmpReply.FileName
+			(*reply).WorkType = tmpReply.WorkType
+			taskAssign = taskAssign[1:]
+		}
 	}
 	return nil
 }
@@ -73,7 +76,6 @@ func (c *Coordinator) server() {
 func (c *Coordinator) Done() bool {
 	ret := false
 	if TaskCount == 0 {
-		c.Done()
 		ret = true
 	}
 
@@ -87,7 +89,6 @@ func (c *Coordinator) Done() bool {
 //
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
-	taskAssign = make(chan ReplyArgs, 1000)
 	// Your code here.
 	TaskCount = 0
 	c.server()
@@ -103,7 +104,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		}
 		file.Close()
 		tsk := ReplyArgs{1, filename}
-		taskAssign <- tsk
+		taskAssign = append(taskAssign, tsk)
 	}
 	return &c
 }

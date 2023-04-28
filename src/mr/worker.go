@@ -47,7 +47,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	// Your worker implementation here.
 	// uncomment to send the Example RPC to the coordinator.
 	for {
-		time.Sleep(5 * time.Second)
+		time.Sleep(time.Second)
 		reply, _ := requestTask(3, "")
 		if reply.WorkType == 0 {
 			continue
